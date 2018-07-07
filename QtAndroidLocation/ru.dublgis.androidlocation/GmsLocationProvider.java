@@ -7,7 +7,7 @@
 
   Distrbuted under The BSD License
 
-  Copyright (c) 2014, DoubleGIS, LLC.
+  Copyright (c) 2014-2017, DoubleGIS, LLC.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -48,24 +48,20 @@ import java.lang.Exception;
 import java.lang.Override;
 import java.util.LinkedHashMap;
 
-import android.os.Bundle;
 import android.location.Location;
 import android.support.v4.content.ContextCompat;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
-import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
-import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
-import com.google.android.gms.common.api.PendingResult;
-import com.google.android.gms.common.api.ResultCallback;
-import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationServices;
 
 import com.google.android.gms.location.LocationAvailability;
 import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.util.Map;
 
@@ -73,11 +69,10 @@ import ru.dublgis.androidhelpers.Log;
 
 import static android.Manifest.permission.ACCESS_COARSE_LOCATION;
 import static android.Manifest.permission.ACCESS_FINE_LOCATION;
-import static android.content.pm.PackageManager.PERMISSION_DENIED;
-import static com.google.android.gms.location.LocationServices.FusedLocationApi;
+import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
 
-public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFailedListener
+public class GmsLocationProvider
 {
 	public static final String TAG = "Grym/GmsLocProvider";
 	
@@ -88,25 +83,8 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 
 	private volatile long native_ptr_ = 0;
 
-	private GoogleApiClient mGoogleApiClientCache = null;
+	private FusedLocationProviderClient mFusedLocationClient = null;
 	private boolean mGoogleApiClientCreateTried = false;
-
-	private synchronized GoogleApiClient googleApiClient() {
-		try {
-			if (!mGoogleApiClientCreateTried) {
-				mGoogleApiClientCreateTried = true;
-				mGoogleApiClientCache = new GoogleApiClient.Builder(getActivity())
-					.addConnectionCallbacks(this)
-					.addOnConnectionFailedListener(this)
-					.addApi(LocationServices.API)
-					.build();
-			}
-			return mGoogleApiClientCache;
-		} catch (final Throwable e) {
-			Log.e(TAG, "Exception in googleApiClient: ", e);
-			return null;
-		}
-	}
 
 	private Location mCurrentLocation;
 	private long mLastRequestId = 0;
@@ -138,8 +116,8 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 	public GmsLocationProvider(long native_ptr)
 	{
 		native_ptr_ = native_ptr;
-		googleApiClientStatus(native_ptr_, STATUS_DISCONNECTED);
 		mlocationUpdatesThread.start();
+		mFusedLocationClient = LocationServices.getFusedLocationProviderClient(getActivity());
 	}
 
 
@@ -168,76 +146,28 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 	}
 
 
-	@Override
-	public void onConnected(Bundle connectionHint)
-	{
-		Log.i(TAG, "Connected to GoogleApiClient");
-		Location locationToSend = null;
-
-		try {
-			Location lastLocation = FusedLocationApi.getLastLocation(googleApiClient());
-
-			synchronized (mRequests) {
-				if (null == mCurrentLocation) {
-					mCurrentLocation = lastLocation;
-				} else if (null != lastLocation) {
-					if (lastLocation.getTime() > mCurrentLocation.getTime()) {
-						mCurrentLocation = lastLocation;
-					}
-				}
-				locationToSend = mCurrentLocation;
-			}
-		}
-		catch(SecurityException e) {
-			Log.e(TAG, "onConnected: Exception while getLastLocation, no permissions: ", e);
-		}
-		catch(Exception e) {
-			Log.e(TAG, "onConnected: Exception while getLastLocation: ", e);
-		}
-
-		if (null != locationToSend) {
-			googleApiClientLocation(native_ptr_, locationToSend, true, 0);
-		}
-
-		googleApiClientStatus(native_ptr_, STATUS_CONNECTED);
-		processAllRequests();
-	}
-
-
-	@Override
-	public void onConnectionSuspended(int cause) 
-	{
-		Log.i(TAG, "Connection suspended, cause = " + cause);
-		googleApiClientStatus(native_ptr_, STATUS_CONNECTION_SUSPENDED);
-	}
-
-
-	@Override
-	public void onConnectionFailed(ConnectionResult result) 
-	{
-		Log.i(TAG, "Connection failed: ConnectionResult.getErrorCode() = " + result.getErrorCode());
-		googleApiClientStatus(native_ptr_, STATUS_CONNECTION_ERROR);
-	}
-
-
 	private void deinitRequest(final Long key) {
 		synchronized (mRequests) {
 			if (mRequests.containsKey(key)) {
 				final RequestHolder holder = mRequests.get(key);
 
-				final GoogleApiClient client = googleApiClient();
-				if (null != client && client.isConnected() && null != holder.mCallback) {
+				if (null != mFusedLocationClient && null != holder && null != holder.mCallback) {
 					try {
-						PendingResult<Status> result =
-							FusedLocationApi.removeLocationUpdates(client, holder.mCallback);
-
-						result.setResultCallback(new ResultCallback<Status>() {
-							@Override
-							public void onResult(@NonNull Status status) {
-								Log.d(TAG, "Result for removeLocationUpdates " + holder.mRequestId + " is " + status);
-							}
-						});
-					} catch (Exception e) {
+						mFusedLocationClient
+							.removeLocationUpdates(holder.mCallback)
+								.addOnFailureListener(new OnFailureListener() {
+									@Override
+									public void onFailure(@NonNull Exception e) {
+										Log.w(TAG, "Failed to remove request #" + key, e);
+									}
+								})
+								.addOnSuccessListener(new OnSuccessListener<Void>() {
+									@Override
+									public void onSuccess(Void aVoid) {
+										Log.i(TAG, "Succeed to remove request #" + key);
+									}
+								});
+					} catch (Throwable e) {
 						Log.e(TAG, "Failed to removeLocationUpdates: ", e);
 					}
 				}
@@ -271,35 +201,76 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 	}
 
 
+	static public boolean isPermissionGranted(Context ctx) {
+		if (null == ctx) {
+			Log.e(TAG, "Context is null in permition checker");
+			return false;
+		}
+		if (Build.VERSION.SDK_INT >= 23 &&
+				PERMISSION_GRANTED != ContextCompat.checkSelfPermission(ctx, ACCESS_FINE_LOCATION) &&
+				PERMISSION_GRANTED != ContextCompat.checkSelfPermission(ctx, ACCESS_COARSE_LOCATION)) {
+			Log.i(TAG, "Permission is not granted");
+			return false;
+		}
+		else {
+			return true;
+		}
+	}
+
+
 	private void processRequest(final RequestHolder holder) {
 		try {
-			final GoogleApiClient client = googleApiClient();
-			if (client != null && client.isConnected() && null != holder) {
+			if (mFusedLocationClient != null && null != holder && isPermissionGranted(getActivity())) {
 				Log.i(TAG, "requestLocationUpdates " + holder.mRequestId);
 
-				Context ctx = getActivity();
-				if (Build.VERSION.SDK_INT >= 23 &&
-						PERMISSION_DENIED == ContextCompat.checkSelfPermission(ctx, ACCESS_FINE_LOCATION) &&
-						PERMISSION_DENIED == ContextCompat.checkSelfPermission(ctx, ACCESS_COARSE_LOCATION)) {
-					return;
-				}
-
-				PendingResult<Status> result =
-					FusedLocationApi.requestLocationUpdates(client, holder.mRequest, holder.mCallback, mlocationUpdatesLooper);
-
-				result.setResultCallback(new ResultCallback<Status>() {
-					@Override
-					public void onResult(@NonNull Status status) {
-						Log.d(TAG, "Result for requestLocationUpdates " + holder.mRequestId + " is " + status);
-					}
-				});
-			}
+				mFusedLocationClient
+					.requestLocationUpdates(holder.mRequest, holder.mCallback, mlocationUpdatesLooper)
+						.addOnSuccessListener(new OnSuccessListener<Void>() {
+							@Override
+							public void onSuccess(Void aVoid) {
+								Log.i(TAG, "Request succeeded #" + holder.mRequestId);
+							}
+						})
+						.addOnFailureListener(new OnFailureListener() {
+							@Override
+							public void onFailure(@NonNull Exception e) {
+								Log.i(TAG, "Request failed #" + holder.mRequestId, e);
+							}
+						});
+				};
 		} catch (IllegalStateException e) {
-			Log.e(TAG, "Failed to connect GoogleApiClient, incorrect looper: ", e);
+			Log.e(TAG, "Failed to processRequest, incorrect looper: ", e);
 		} catch (SecurityException e) {
-			Log.e(TAG, "Failed to connect GoogleApiClient, no permissions: ", e);
-		} catch (Exception e) {
-			Log.e(TAG, "Failed to connect GoogleApiClient: ", e);
+			Log.e(TAG, "Failed to processRequest, no permissions: ", e);
+		} catch (Throwable e) {
+			Log.e(TAG, "Failed to processRequest: ", e);
+		}
+	}
+
+
+	public void lastKnownPosition() {
+		if (null != mFusedLocationClient && isPermissionGranted(getActivity())) {
+			try {
+				mFusedLocationClient
+					.getLastLocation()
+						.addOnSuccessListener(new OnSuccessListener<Location>() {
+							@Override
+							public void onSuccess(Location location) {
+								googleApiClientLocation(native_ptr_, location, true, 0);
+							}
+						})
+						.addOnFailureListener(new OnFailureListener() {
+							@Override
+							public void onFailure(@NonNull Exception e) {
+								Log.w(TAG, "Failed to get last location", e);
+							}
+						});
+			} catch (SecurityException e) {
+				Log.e(TAG, "Failed to get last known position", e);
+			}
+			catch(Throwable e) {
+				Log.e(TAG, "Failed to get last known position", e);
+			}
 		}
 	}
 
@@ -379,7 +350,7 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 
 	public void stopLocationUpdates(long id)
 	{
-		Log.d(TAG, "stopLocationUpdates(" + id + ")" );
+		Log.i(TAG, "stopLocationUpdates(" + id + ")" );
 
 		synchronized (mRequests) {
 			deinitRequest(id);
@@ -389,14 +360,8 @@ public class GmsLocationProvider implements ConnectionCallbacks, OnConnectionFai
 
 	public void activate(boolean enable)
 	{
-		final GoogleApiClient client = googleApiClient();
-		if (null != client) {
-			if (enable) {
-				client.connect();
-			} else {
-				client.disconnect();
-				googleApiClientStatus(native_ptr_, STATUS_DISCONNECTED);
-			}
+		if (enable) {
+			lastKnownPosition();
 		}
 	}
 

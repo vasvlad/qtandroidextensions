@@ -1,25 +1,25 @@
 /*
-  Offscreen Android Views library for Qt
+  Simple access to Android passive location.
 
   Author:
-  Vyacheslav O. Koscheev <vok1980@gmail.com>
+  Sergey A. Galin <sergey.galin@gmail.com>
 
   Distrbuted under The BSD License
 
-  Copyright (c) 2015, DoubleGIS, LLC.
+  Copyright (c) 2018, DoubleGIS, LLC.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
 
   * Redistributions of source code must retain the above copyright notice,
-    this list of conditions and the following disclaimer.
+	this list of conditions and the following disclaimer.
   * Redistributions in binary form must reproduce the above copyright notice,
-    this list of conditions and the following disclaimer in the documentation
-    and/or other materials provided with the distribution.
+	this list of conditions and the following disclaimer in the documentation
+	and/or other materials provided with the distribution.
   * Neither the name of the DoubleGIS, LLC nor the names of its contributors
-    may be used to endorse or promote products derived from this software
-    without specific prior written permission.
+	may be used to endorse or promote products derived from this software
+	without specific prior written permission.
 
   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -35,30 +35,13 @@
 */
 
 #pragma once
-#include <QtCore/QObject>
-#include <QtPositioning/QGeoPositionInfoSource>
-#include <IJniObjectLinker.h>
+
+#include <QtPositioning/QGeoPositionInfo>
 
 
-class QLocationManagerProvidersListener : public QObject
-{
-	Q_OBJECT
-	JNI_LINKER_DECL(QLocationManagerProvidersListener)
+namespace QAndroidPassiveGeoPosition {
 
-public:
-	QLocationManagerProvidersListener(QObject * parent = 0);
-	virtual ~QLocationManagerProvidersListener();
+QGeoPositionInfo get();
 
-public:
-	bool isActiveProvidersEnabled();
-	QGeoPositionInfoSource::PositioningMethods getActiveMethods();
-	QGeoPositionInfoSource::PositioningMethods getAvailableMethods();
-
-signals:
-	void providersChange(bool);
-
-private:
-	void onProvidersChange();
-	friend void JNICALL Java_onProvidersChange(JNIEnv * env, jobject, jlong param);
-};
+} // namespace QAndroidPassiveGeoPosition
 
