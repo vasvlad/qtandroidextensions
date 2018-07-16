@@ -35,6 +35,9 @@
 
 package ru.dublgis.androidhelpers.mobility;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -44,11 +47,18 @@ import android.os.RemoteException;
 import device.common.DecodeResult;
 import device.common.ScanConst;
 import device.sdk.ScanManager;
-import com.honeywell.aidc.*;
+import com.honeywell.aidc.AidcManager;                      //менеджер подключенных barcodeReader-ов
+import com.honeywell.aidc.AidcManager.CreatedCallback;      //Для обработки события создания менеджера
+import com.honeywell.aidc.BarcodeReader;                    //Объект-слушатель сканера
+import com.honeywell.aidc.BarcodeReadEvent;                 //Событие успешного считывания
+import com.honeywell.aidc.BarcodeFailureEvent;              //Событие неудачного считывания
+import com.honeywell.aidc.UnsupportedPropertyException;     //Исключение при попытке присвоить значение несуществующему пункту настроек
+import com.honeywell.aidc.TriggerStateChangeEvent;          //Событие изменения кнопки сканирования
 
 
 
-public class ScannerListener extends BroadcastReceiver
+public class ScannerListener extends BroadcastReceiver implements BarcodeReader.BarcodeListener,BarcodeReader.TriggerListener       //Чтобы BroadcastReceiver смог получать сигналы от BarcodeReader-а ему необходимо
+                                                                                                                                    //имплементировать и определить методы BarcodeListener-а и TriggerListener-а
 {
     final private static String LOG_TAG = "Grym/ScannerListener";
     final private static boolean verbose_ = false;
@@ -58,16 +68,24 @@ public class ScannerListener extends BroadcastReceiver
     private AidcManager myAidcManager;
 
 
-	private static ScanManager iScanner;
-	private static DecodeResult mDecodeResult;
+    private static ScanManager iScanner;
+    private static DecodeResult mDecodeResult;
     private static String result = "";
 
+
     public ScannerListener(){
+
+        Log.e(LOG_TAG, "ScannerListener()  ");
+
+
     }
 
     public ScannerListener(long native_ptr)
     {
+        Log.e(LOG_TAG, "ScannerListener(long native_ptr)  ");
+
         native_ptr_ = native_ptr;
+
     }
 
 
@@ -89,13 +107,29 @@ public class ScannerListener extends BroadcastReceiver
         }
     }
 
-    public void onBarcodeEvent(final BarcodeReadEvent event) {
-        
-        Log.e(LOG_TAG, "Broadcast ");
+    @Override
+    public void onBarcodeEvent(final BarcodeReadEvent event) {                                  //обработка сигнала успешного считывания кода
+
+        Log.e(LOG_TAG, "onBarcodeEvent ");
         Log.e(LOG_TAG, "Result QR!!!!!!!!!!!!!!!!!: " + event.getBarcodeData());
+        Log.e(LOG_TAG, "Barcode data: " + event.getBarcodeData());
+        Log.e(LOG_TAG, "Character Set: " + event.getCharset());
+        Log.e(LOG_TAG, "Code ID: " + event.getCodeId());
+        Log.e(LOG_TAG, "AIM ID: " + event.getAimId());
+        Log.e(LOG_TAG, "Timestamp: " + event.getTimestamp());
         result = new String(event.getBarcodeData());
         scannerInfoUpdate(native_ptr_, true);
 
+    }
+
+    @Override
+    public void onFailureEvent(BarcodeFailureEvent arg0) {                                  //обработка сигнала неуспешного считывания кода
+        Log.e(LOG_TAG, "onFailureEvent(BarcodeFailureEvent arg0) ");
+    }
+
+    @Override
+    public void onTriggerEvent(TriggerStateChangeEvent event) {                             //обработка сигнала изменения состояния кнопки считывания кода
+        Log.e(LOG_TAG, "onTriggerEvent(TriggerStateChangeEvent event) ");
     }
 
 
@@ -112,7 +146,7 @@ public class ScannerListener extends BroadcastReceiver
             iScanner = new ScanManager();
             if (iScanner != null) {
                 mDecodeResult = new DecodeResult();
-                Log.e(LOG_TAG, "Init scanner: MP60");
+                Log.e(LOG_TAG, "Init scanner: PM80");
 
                 try {
                     Thread.sleep(500);
@@ -125,52 +159,63 @@ public class ScannerListener extends BroadcastReceiver
         catch (final Throwable e)
         {
             Log.e(LOG_TAG, "Exception while starting ScannerListener: ", e);
-            return false;
         }
-        return false;
-    }
 
-    public synchronized boolean initeda() throws RemoteException {
-        try
+        try                                                                                  //Если инициализация РМ80 не удалась, то пробуем инициализировать менеджера для HoneyWell EDA50
         {
-            Log.e(LOG_TAG, "Try Init scanner  ");
-            AidcManager.create(this, new CreatedCallback() {
+            Log.e(LOG_TAG, "Try Init scanner EDA50 ");
 
-                @Override
-                public void onCreated(AidcManager aidcManager) {
-                    myAidcManager = aidcManager;
-                    myBarcodeReader = myAidcManager.createBarcodeReader();
-                    if (myBarcodeReader != null) {
-
-                        // register bar code event listener
-                        myBarcodeReader.addBarcodeListener(this);
-
-                        // set the trigger mode to client control
-                        try {
-                            myBarcodeReader.setProperty(BarcodeReader.PROPERTY_TRIGGER_CONTROL_MODE,
-                                BarcodeReader.TRIGGER_CONTROL_MODE_AUTO_CONTROL);
-                        } catch (UnsupportedPropertyException e) {
-                            Toast.makeText(this, "Failed to apply properties", Toast.LENGTH_SHORT).show();
-                        }
-                        // register trigger state change listener
-                        myBarcodeReader.addTriggerListener(this);
-                        myBarcodeReader.claim();
+            AidcManager.create(getContext(), new CreatedCallback() {
+                    @Override
+                    public void onCreated(AidcManager aidcManager) {                         //Когда объект создан - запоминаем его в локальную переменную и инициализируем BarcodeReader
+                        myAidcManager = aidcManager;
+                        myBarcodeReader = myAidcManager.createBarcodeReader();
+                        Log.e(LOG_TAG, "Manager GREATED  ");
                     }
-
+                });
+            Thread.sleep(1000);                                                              //нужно, чтобы объект успел создаться (КОСТЫЛЬ)
+            Log.e(LOG_TAG, "Try to run barcode reader  ");
+            if (myBarcodeReader != null) {                                                   //Если BarcodeReader инициализирован, то устанавливаем некоторые его свойства
+                Log.e(LOG_TAG, "Try Init BarcodeListener  ");
+                // register bar code event listener
+                myBarcodeReader.addBarcodeListener(this);
+                // set the trigger mode to client control
+                try {
+                    Log.e(LOG_TAG, "Try Init Property  ");
+                    myBarcodeReader.setProperty(BarcodeReader.PROPERTY_TRIGGER_CONTROL_MODE,
+                        BarcodeReader.TRIGGER_CONTROL_MODE_AUTO_CONTROL);                                          //автообработка нажатия кнопки сканирования(свет, звук, считывание)
+                } catch (UnsupportedPropertyException e) {
+                    //Toast.makeText(this, "Failed to apply properties", Toast.LENGTH_SHORT).show();
+                        Log.e(LOG_TAG, "Failed to apply properties  ");
                 }
-            });
-            return true;
+                // register trigger state change listener
+                myBarcodeReader.addTriggerListener(this);
+                Map<String, Object> properties = new HashMap<String, Object>();
+                // Set Symbologies On/Off
+                properties.put(BarcodeReader.PROPERTY_QR_CODE_ENABLED, true);                                      //ВКЛ распознавание QR-кодов
+                // Enable bad read response
+                properties.put(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, true);
+                // Disable launch browser
+                properties.put(BarcodeReader.PROPERTY_DATA_PROCESSOR_LAUNCH_BROWSER, false);                       //ВЫКЛ запуск браузера, если считана ссылка
+                // Apply the settings
+                myBarcodeReader.setProperties(properties);
+                myBarcodeReader.claim();                                                                           //Запуск слушателя(БЕЗ ЭТОГО СИГНАЛЫ НЕ ПРИДУТ)
+                return true;
+            }
 
         }
         catch (final Throwable e)
         {
             Log.e(LOG_TAG, "Exception while starting ScannerListener: ", e);
-            return false;
+            //return false;
         }
+
         return false;
     }
 
-    @Override
+
+
+/*    @Override
     protected void onDestroy() {
         super.onDestroy();
 
@@ -186,7 +231,7 @@ public class ScannerListener extends BroadcastReceiver
             // once closed, the object can no longer be used.
             myAidcManager.close();
         }
-    }
+    }*/
 
 
     private native void scannerInfoUpdate(long native_ptr, boolean code);
