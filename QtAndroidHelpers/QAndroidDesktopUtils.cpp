@@ -336,6 +336,7 @@ QStringList getInstalledAppsList()
 
 QString getUniqueDeviceId()
 {
+	qDebug()<<"getUniqueDeviceId1";
 	static bool device_id_initialized = false;
 	static QString device_id;
 
