@@ -39,6 +39,7 @@ package ru.dublgis.androidhelpers;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import android.os.LocaleList;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Set;
@@ -773,7 +774,7 @@ public class DesktopUtils
     {
         try
         {
-            return ctx.getResources().getConfiguration().locale.getDisplayCountry();
+            return getDefaultLocale(ctx).getDisplayCountry();
         }
         catch (final Throwable e)
         {
@@ -786,7 +787,7 @@ public class DesktopUtils
     {
         try
         {
-            return ctx.getResources().getConfiguration().locale.getCountry();
+            return getDefaultLocale(ctx).getCountry();
         }
         catch (final Throwable e)
         {
@@ -851,10 +852,51 @@ public class DesktopUtils
         return "";
     }
 
-    public static String getDefaultLocaleName()
-    {
-        return Locale.getDefault().toString();
+
+    // Get user's default locale.
+    private static Locale getDefaultLocale(final Context context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24 / Android 7.0
+                return context.getResources().getConfiguration().getLocales().get(0);
+            } else {
+                return context.getResources().getConfiguration().locale;
+            }
+        } catch (final Throwable e) {
+            Log.e(TAG, "getDefaultLocale exception: ", e);
+            return Locale.getDefault();
+        }
     }
+
+
+    public static String getDefaultLocaleName(final Context context)
+    {
+        try {
+            return getDefaultLocale(context).toString();
+        } catch (final Throwable e) {
+            Log.e(TAG, "getDefaultLocaleName exception: ", e);
+            return "";
+        }
+    }
+
+
+    public static String getUserLocaleNames(final Context context)
+    {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24 / Android 7.0
+            try {
+                final LocaleList list = context.getResources().getConfiguration().getLocales();
+                if (list.size() > 0) {
+                    String result = "";
+                    for (int i = 0; i < list.size(); ++i)
+                        result += list.get(i).toString() + "\n";
+                    return result;
+                }
+            } catch (final Throwable e) {
+                Log.e(TAG, "getUserLocaleNames exception: ", e);
+            }
+        }
+        return getDefaultLocaleName(context);
+    }
+
 
 
     private static class ActivityInfo implements Comparable<ActivityInfo> {

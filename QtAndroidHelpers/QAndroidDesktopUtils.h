@@ -109,6 +109,7 @@ QString getBuildSerial();
 QStringList getInstalledAppsList();
 
 QString getDefaultLocaleName();
+QStringList getUserLocaleNames();
 
 QString takePhoto(const QString & path);
 

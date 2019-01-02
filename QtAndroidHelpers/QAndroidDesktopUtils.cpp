@@ -34,7 +34,7 @@
   THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <QAndroidQPAPluginGap.h>
+#include <QJniHelpers/QAndroidQPAPluginGap.h>
 #include "QAndroidDesktopUtils.h"
 
 namespace QAndroidDesktopUtils {
@@ -413,12 +413,34 @@ QString getDefaultLocaleName()
 	QJniClass du(c_full_class_name_);
 	if (du.jClass())
 	{
-		return du.callStaticString("getDefaultLocaleName");
+		return du.callStaticParamString(
+			"getDefaultLocaleName",
+			"Landroid/content/Context;",
+			QAndroidQPAPluginGap::Context().jObject());
 	}
 	else
 	{
 		qCritical() << "Null class:" << c_full_class_name_;
 		return QLatin1String("C");
+	}
+}
+
+
+QStringList getUserLocaleNames()
+{
+	QJniClass du(c_full_class_name_);
+	if (du.jClass())
+	{
+		return du.callStaticParamString(
+			"getUserLocaleNames",
+			"Landroid/content/Context;",
+			QAndroidQPAPluginGap::Context().jObject())
+			.split(QLatin1Char('\n'), QString::SkipEmptyParts);
+	}
+	else
+	{
+		qCritical() << "Null class:" << c_full_class_name_;
+		return QStringList() << QLatin1String("C");
 	}
 }
 

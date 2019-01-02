@@ -1,8 +1,10 @@
 /*
 	Offscreen Android Views library for Qt
 
-    Authors:
-    Uladzislau Vasilyeu <vasvlad@gmail.com>
+	Authors:
+		Vyacheslav O. Koscheev <vok1980@gmail.com>
+		Ivan Avdeev marflon@gmail.com
+		Sergey A. Galin sergey.galin@gmail.com
 
     Distrbuted under The BSD License
 
@@ -36,8 +38,9 @@
 #pragma once
 
 #include <QtCore/QObject>
-#include <QJniHelpers.h>
-#include "IJniObjectLinker.h"
+#include <QtCore/QReadWriteLock>
+#include <QJniHelpers/QJniHelpers.h>
+#include <QJniHelpers/IJniObjectLinker.h>
 #include "CellData.h"
 
 
@@ -56,18 +59,24 @@ public:
 	CellDataPtr getLastData();
 
 private:
-	friend void JNICALL Java_CellListener_cellUpdate(JNIEnv *, jobject, jlong native_ptr, jint cid, jint lac, jint mcc, jint mnc, jint rssi);
-	void cellUpdate(int cid, int lac, int mcc, int mnc, int rssi);
+	friend void JNICALL Java_CellListener_cellUpdate(JNIEnv *, jobject, jlong native_ptr, jstring type, jint cid, jint lac, jint mcc, jint mnc, jint rssi, jint ta);
+	friend void JNICALL JNICALL Java_CellListener_onSignalChanged(JNIEnv *, jobject, jlong native_ptr);
+	void cellUpdate(jstring type, jint cid, jint lac, jint mcc, jint mnc, jint rssi, jint ta);
+	void onSignalChanged();
 
 public slots:
 	void start();
 	void stop();
+	void requestData();
 
 signals:
-	void update();
+	void updated();
+	void dataReady();
 
 private:
 	CellDataPtr last_data_;
+	CellDataPtr current_data_;
+	QReadWriteLock lock_data_;
 };
 
 }
